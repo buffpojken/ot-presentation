@@ -1,0 +1,270 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+		<title>Operational Transforms</title>
+
+		<link rel="stylesheet" href="css/reveal.css">
+		<link rel="stylesheet" href="css/theme/black.css">
+
+		<!-- Theme used for syntax highlighting of code -->
+		<link rel="stylesheet" href="lib/css/zenburn.css">
+
+		<!-- Printing and PDF exports -->
+		<script>
+			var link = document.createElement( 'link' );
+			link.rel = 'stylesheet';
+			link.type = 'text/css';
+			link.href = window.location.search.match( /print-pdf/gi ) ? 'css/print/pdf.css' : 'css/print/paper.css';
+			document.getElementsByTagName( 'head' )[0].appendChild( link );
+		</script>
+	</head>
+	<body>
+		<div class="reveal">
+			<div class="slides">
+				<section>
+					<h1>Operational Transforms</h1>
+					<p>For fun and profit (?)</p>
+				</section>
+				<section>
+					<h2>What is Operational Transforms?</h2>
+				</section>
+				<section>
+					<blockquote>Operational transformation (OT) is a technology for supporting a range of collaboration functionalities in advanced collaborative software systems.</blockquote>
+				</section>
+				<section>
+					<p>But what's it do?</p>
+				</section>
+				<section>
+					<p>It solves a very specific problem, but it solves that problem very well.</p>
+				</section>				
+				<section>
+					<p>Real-time collaborative editing is trivial in a world where there's never any latency, 
+						<span class="fragment">unreliable connections, </span>
+						<span class="fragment">unreliable clients </span>						
+						<span class="fragment">or the kind weird failures that always occur in distributed systems.</span>						
+					</p>
+				</section>
+				<section>
+					<p>
+						It solves the problem of:
+					</p>
+						<span class="fragment">
+							If both users X and Y edit the same piece of data, how do we merge them to preserve the <strong>intent</strong> of both users edits?
+						</span>
+				</section>
+				<section>
+					<h2>Example time!</h2>
+				</section>
+				<section class="stack">
+					<section>
+						<pre>
+							<code class="hljs javascript>">
+// Our piece of data
+let text = "go";
+
+// Let us assume two separate edits from two separate users
+
+// User 1 adds an "a" after two characters, resulting 
+// in the string "got"
+let user1_operation = text.retain(2).insertCharacter('t')
+
+// User 2 adds an "t" after two characters, resulting 
+// in the string "goa"
+let user2_operation = text.retain(2).insertCharacter('a')						
+								</code>
+						</pre>
+						<p class="fragment">
+							Now, without operational transforms - we have a problem.
+						</p>
+					</section>
+					<section>
+						<p>
+							If we just naively send the operations to each user, we end up with two different views of the string - since the local operation will complete way ahead of any transmitted operation.</p>						
+						<pre>
+							<code class="hljs javascript">
+// If User 1 receives User 2's operation
+let text = "gota"
+
+// If User 2 receives User 1's operation
+let text = "goat"								
+							</code>
+						</pre>
+						<p class="fragment whisper" style="font-size:16px;">
+							( the above statement is only practically true - in theory, you can't say which of the two you'll end up with - the problem still holds... )
+						</p>
+					</section>					
+				</section>
+				<section>
+					<h2>Transforms to the rescue!</h2>
+				</section>
+				<section>
+					<p>What if we could resolve conflicts on the go (that is - so the user never sees them), and focus on the 
+						<strong>intent</strong> of the changes?</p>
+				</section>
+				<section>
+					<h3>The magic!</h3>
+					<p>Operational Transforms allows a server to establish an order of operations, and then transform incoming operations against the current state in way that they represent the <strong>intent</strong> of the change.</p>
+				</section>
+				<section class="stack">
+					<section>
+					<pre>
+						<code class="hljs javascript">
+// When User 1 (and server) receives the operation, it'll 
+// transform it using its known state from:
+text.retain(2).insert('a')
+
+// into
+text.retain(2).insert('a').retain(1)
+
+// resulting in 
+text = "goat"
+						</code>
+					</pre>
+					</section>
+					<section>
+						<p>Meanwhile, User 2 (and the server) has received the other operation:</p>
+						<pre>
+							<code class="hljs javascript">
+text.retain(2).insert('t')
+
+// which transforms into
+text.retain(3).insert('t')
+
+// resulting in 
+text = "goat"
+							</code>
+						</pre>
+					</section>
+					</section>
+				<section>
+					<p>And boom - the text match on both clients and the server.</p>
+					<p class="fragment" style="font-size:16px">
+						Note - it's technically possible to do OT without a central server, but it's A LOT harder and not
+					something we cover here.</p>
+					</p>
+					<p class="fragment" style="font-size:16px">
+						Note #2 - Examples above assume that the servers receipt-order of operations is first User 2, then User 1. It doesn't matter which the true order actually is, since the transform-step is idempontent.</p>
+					</p>
+				</section>
+				<section>
+					<h2>So, that's why it works - HOW does it work?</h2>
+				</section>
+				<section>
+					<p>Operational Transforms rely on a few key rules in order to work.</p>
+					<ol>
+						<li class="fragment">
+							All operations span the entire length of the data.
+						</li>
+						<li class="fragment">
+							Operations can either delete, keep or add. There's no replace <span class="fragment">unless you implement it as a delete + keep.</span>
+						</li>
+					</ol>					
+				</section>
+				<section>
+					<p>Which is why, in our example:</p>
+					<pre>
+						<code class="hljs javascript">
+// When User 1 (and server) receives the operation, it'll 
+// transform it using its known state from:
+text.retain(2).insert('a')
+
+// into
+text.retain(2).insert('a').retain(1)
+
+// resulting in 
+text = "goat"
+						</code>
+					</pre>
+					<p class="fragment" style="font-size:20px;">
+						there's a retain(1) added after the transform
+					</p>
+					<p class="fragment" style="font-size:20px;">
+						since the local instance already knows that the data is 3 characters long, and the incoming operation includes an insert-operation with a length of 1.
+					</p>
+				</section>
+				<section>
+					<h1>Labtime!</h1>
+				</section>
+				<section>
+					<a href="https://jsbin.com/gipicavixo/1/edit?js,console" target="_blank">JSBIN</a>
+				</section>
+				<section>
+					<p>Thus, we can see that by always enforcing that operations span the entire length, it's always mathematically
+					possible to calculate the actual transform.</p>
+				</section>
+				<section>
+					<p>Which, in theory, allows us to do the exact same thing across, for example, a JSON-document.</p>
+					<p class="fragment">
+						The tricky part is writing the transform that composes a set of operations into one operation for a given string.
+					</p>
+				</section>
+				<section>
+					<h3>So, how do we to this with rich text?</h3>
+				</section>
+				<section>
+					<p>By treating even an embed as an insert-operation of course!</p>
+					<p class="fragment">
+						<pre>
+							<code class="hljs javascript">
+text.insert({image: 'PATH_TO_IMAGE'})
+.retain(2)
+.insert({embed: 'YOUTUBE_URL'})
+							</code>
+						</pre>
+					</p>
+				</section>
+				<section>
+					<p>The transform doesn't care how we render it - so the actual rendering of the embed has nothing to do with resolving a conflict of a text edit in the same place.</p>
+				</section>
+				<section>
+					<h2>What about actually sending the transforms and persisting them?</h2>
+				</section>
+				<section>
+					<p>In theory, that's completely separate from operational transforms. In practice, you use websockets and persist snapshots.</p>
+				</section>
+				<section>
+					<h3>How do we best persist a document that we manage using Operational Transforms when it's at rest?</h3>
+					<p class="fragment" style="font-size:16px">"at rest" is OT-term for "no active edit sessions".</p>
+				</section>	
+				<section>
+					<p>You can always represent an inert document as a single insert operation, with the entire text (if not rich text), or as an array of insert-operations (if rich text).</p>
+					<pre>
+						<code class="hljs javascript">
+{"ops":[
+	{"insert":"Hej! Vem där??  - Hmm, realtid mellan "},
+	{"attributes":{"bold":true},"insert":"devices"},
+	{"insert":" - det verkar "},
+	{"attributes":{"italic":true},"insert":"väl"},
+	{"insert":" fett...japp, visst gör det? med styling och allt...."}
+]}
+						</code>
+					</pre>
+					<p style="font-size:16px;">Note the rendering instructions to the rich text engine that's part of the operation.</p>
+				</section>
+				<section>
+					Cheers!
+				</section>
+			</div>
+		</div>
+
+		<script src="lib/js/head.min.js"></script>
+		<script src="js/reveal.js"></script>
+
+		<script>
+			// More info about config & dependencies:
+			// - https://github.com/hakimel/reveal.js#configuration
+			// - https://github.com/hakimel/reveal.js#dependencies
+			Reveal.initialize({
+				dependencies: [
+					{ src: 'plugin/markdown/marked.js' },
+					{ src: 'plugin/markdown/markdown.js' },
+					{ src: 'plugin/notes/notes.js', async: true },
+					{ src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } }
+				]
+			});
+		</script>
+	</body>
+</html>
